@@ -1,43 +1,105 @@
 package main
 
 import (
-	"context"
-	"log"
+	"fmt"
+	"os"
+	"strconv"
 
+	"corvus_bot/internal/trading"
 	"corvus_bot/pkg/config"
-	"corvus_bot/pkg/raydium"
+
+	"github.com/spf13/cobra"
 )
 
 func main() {
-	log.Println("Starting Corvus Bot...")
-
 	// Load configuration
-	cfg, err := config.LoadConfig("pkg/config/config.yaml")
+	cfg, err := config.LoadConfig("pkg/config/config.yaml") // Corrected to reference the module's structure
 	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
+		fmt.Printf("Error loading config: %v\n", err)
+		os.Exit(1)
 	}
 
-	// Initialize Raydium client
-	raydiumClient, err := raydium.NewRaydiumClient(cfg.RPCConnection, cfg.RaydiumAMMProgramID)
-	if err != nil {
-		log.Fatalf("Failed to initialize Raydium client: %v", err)
+	// Root command
+	var rootCmd = &cobra.Command{
+		Use:   "corvus_bot",
+		Short: "A Solana trading bot",
 	}
 
-	// Fetch AMM Pool data
-	ctx := context.Background()
-	poolAddress := "BVdxeDmh4YWgzR3v4tnetwCnU12zPdcXwooAspiiUGaB" // Replace with an actual pool address
-	poolData, err := raydiumClient.FetchAMMPool(ctx, poolAddress)
-	if err != nil {
-		log.Fatalf("Failed to fetch AMM Pool data: %v", err)
+	// Buy command
+	var buyCmd = &cobra.Command{
+		Use:   "buy [dex] [address] [amount] [fee] [slippage]",
+		Short: "Execute a buy operation on a specific DEX",
+		Args:  cobra.ExactArgs(5),
+		Run: func(cmd *cobra.Command, args []string) {
+			dex := args[0]
+			address := args[1]
+			amount, err := strconv.ParseFloat(args[2], 64)
+			if err != nil {
+				fmt.Printf("Invalid amount: %v\n", err)
+				os.Exit(1)
+			}
+			fee, err := strconv.ParseFloat(args[3], 64)
+			if err != nil {
+				fmt.Printf("Invalid fee: %v\n", err)
+				os.Exit(1)
+			}
+			slippage, err := strconv.ParseFloat(args[4], 64)
+			if err != nil {
+				fmt.Printf("Invalid slippage: %v\n", err)
+				os.Exit(1)
+			}
+
+			err = trading.Buy(cfg, dex, address, amount, fee, slippage)
+			if err != nil {
+				fmt.Printf("Error executing buy: %v\n", err)
+				os.Exit(1)
+			}
+
+			fmt.Println("Buy operation completed successfully!")
+		},
 	}
-	log.Printf("Fetched AMM Pool data: %+v", poolData)
 
-	// Example: Parse a transaction
-	//txSignature := "fnzGQb3gegHU5gNt15kfwMoEJDuH8HDurj8k3yR8scEXmC2qDgQ4gcp5Y57nAXot658Nj5xzMmG9c6Kmmkz2xCo" // Replace with an actual transaction signature
-	//err = raydium.ParseTransaction(ctx, cfg.RPCConnection, txSignature)
-	//if err != nil {
-	//	log.Fatalf("Failed to parse transaction: %v", err)
-	//}
+	// Sell command
+	var sellCmd = &cobra.Command{
+		Use:   "sell [dex] [address] [amount] [fee] [slippage]",
+		Short: "Execute a sell operation on a specific DEX",
+		Args:  cobra.ExactArgs(5),
+		Run: func(cmd *cobra.Command, args []string) {
+			dex := args[0]
+			address := args[1]
+			amount, err := strconv.ParseFloat(args[2], 64)
+			if err != nil {
+				fmt.Printf("Invalid amount: %v\n", err)
+				os.Exit(1)
+			}
+			fee, err := strconv.ParseFloat(args[3], 64)
+			if err != nil {
+				fmt.Printf("Invalid fee: %v\n", err)
+				os.Exit(1)
+			}
+			slippage, err := strconv.ParseFloat(args[4], 64)
+			if err != nil {
+				fmt.Printf("Invalid slippage: %v\n", err)
+				os.Exit(1)
+			}
 
-	log.Println("Corvus Bot completed successfully!")
+			err = trading.Sell(cfg, dex, address, amount, fee, slippage)
+			if err != nil {
+				fmt.Printf("Error executing sell: %v\n", err)
+				os.Exit(1)
+			}
+
+			fmt.Println("Sell operation completed successfully!")
+		},
+	}
+
+	// Add subcommands
+	rootCmd.AddCommand(buyCmd)
+	rootCmd.AddCommand(sellCmd)
+
+	// Execute root command
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 }
