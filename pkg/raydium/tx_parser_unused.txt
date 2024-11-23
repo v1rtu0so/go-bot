@@ -1,0 +1,29 @@
+package raydium
+
+import (
+	"context"
+	"log"
+)
+
+// ParseTransaction parses a Solana transaction and prints its details.
+func ParseTransaction(ctx context.Context, rpcURL string, txSignature string) error {
+	client := txparser.NewClient(rpcURL)
+
+	// Fetch the transaction details using the signature
+	txInfo, err := client.GetTransaction(ctx, txSignature)
+	if err != nil {
+		log.Printf("Failed to fetch transaction: %v", err)
+		return err
+	}
+
+	// Parse the transaction details
+	log.Println("Transaction Details:")
+	log.Printf("Signature: %s", txInfo.Signature)
+	log.Printf("Blocktime: %d", txInfo.BlockTime)
+
+	for idx, instruction := range txInfo.Instructions {
+		log.Printf("Instruction %d: %+v", idx, instruction)
+	}
+
+	return nil
+}
