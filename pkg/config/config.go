@@ -1,7 +1,7 @@
 package config
 
 import (
-	"log"
+	"fmt"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -17,9 +17,9 @@ type Config struct {
 	PrivateKey           string `yaml:"private_key"`             // Private key for Solana wallet
 	JitoBundleEndpoint   string `yaml:"jito_bundle_endpoint"`    // Jito block engine bundle endpoint
 	JitoTxEndpoint       string `yaml:"jito_tx_endpoint"`        // Jito block engine transaction endpoint
-	BloxrouteEndpoint    string `yaml:"bloxroute_endpoint"`      // BloXroute endpoint
-	BloxrouteAuthHeader  string `yaml:"bloxroute_auth_header"`   // BloXroute authorization header
-	BloxrouteTipAddress  string `yaml:"bloxroute_tip_address"`   // BloXroute tip address
+	BloXrouteEndpoint    string `yaml:"bloxroute_endpoint"`      // BloXroute endpoint
+	BloXrouteAuthHeader  string `yaml:"bloxroute_auth_header"`   // BloXroute authorization header
+	BloXrouteTipAddress  string `yaml:"bloxroute_tip_address"`   // BloXroute tip address
 	HeliusAPIKey         string `yaml:"helius_api_key"`          // Helius API key
 	HeliusRPC            string `yaml:"helius_rpc"`              // Helius RPC endpoint
 	HeliusStakedRPC      string `yaml:"helius_staked_rpc"`       // Helius staked RPC endpoint
@@ -35,28 +35,42 @@ type Config struct {
 func LoadConfig(configPath string) (*Config, error) {
 	file, err := os.Open(configPath)
 	if err != nil {
-		log.Fatalf("Error opening config file: %v", err)
-		return nil, err
+		return nil, fmt.Errorf("error opening config file: %w", err)
 	}
 	defer file.Close()
 
 	decoder := yaml.NewDecoder(file)
 	cfg := &Config{}
 	if err := decoder.Decode(cfg); err != nil {
-		log.Fatalf("Error decoding config file: %v", err)
-		return nil, err
-	}
-
-	// Log a warning for empty sensitive fields.
-	if cfg.PrivateKey == "" {
-		log.Println("WARNING: Private key is not set in the configuration.")
-	}
-	if cfg.BloxrouteAuthHeader == "" {
-		log.Println("WARNING: BloXroute auth header is not set in the configuration.")
-	}
-	if cfg.HeliusAPIKey == "" {
-		log.Println("WARNING: Helius API key is not set in the configuration.")
+		return nil, fmt.Errorf("error decoding config file: %w", err)
 	}
 
 	return cfg, nil
+}
+
+// Validate checks if all required configuration fields are set.
+func (cfg *Config) Validate() error {
+	var missingFields []string
+
+	if cfg.RPCConnection == "" {
+		missingFields = append(missingFields, "rpc_connection")
+	}
+	if cfg.WSConnection == "" {
+		missingFields = append(missingFields, "ws_connection")
+	}
+	if cfg.PrivateKey == "" {
+		missingFields = append(missingFields, "private_key")
+	}
+	if cfg.BloXrouteAuthHeader == "" {
+		missingFields = append(missingFields, "bloxroute_auth_header")
+	}
+	if cfg.HeliusAPIKey == "" {
+		missingFields = append(missingFields, "helius_api_key")
+	}
+
+	if len(missingFields) > 0 {
+		return fmt.Errorf("missing required configuration fields: %v", missingFields)
+	}
+
+	return nil
 }
