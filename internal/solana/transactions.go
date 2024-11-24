@@ -8,6 +8,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"github.com/gagliardetto/solana-go"
+	"github.com/gagliardetto/solana-go/rpc"
 )
 
 // SignTransaction signs the transaction with the provided private keys.
@@ -65,6 +68,35 @@ func BuildRawTransaction(instructions []Instruction, blockhash string, payerPubK
 		PayerPubKey:  payerPubKey,
 		Instructions: instructions,
 	}
+}
+
+// buildTransaction constructs and signs a Solana transaction.
+func buildTransaction(ctx context.Context, client *rpc.Client, payer solana.PrivateKey, instructions []solana.Instruction) (*solana.Transaction, error) {
+	// Fetch the recent blockhash for the transaction.
+	recentBlockhash, err := client.GetRecentBlockhash(ctx, rpc.CommitmentFinalized)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch recent blockhash: %w", err)
+	}
+
+	// Create the transaction with the instructions and blockhash.
+	tx, err := solana.NewTransaction(
+		instructions,
+		recentBlockhash.Value.Blockhash,
+		solana.TransactionPayer(payer.PublicKey()),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create transaction: %w", err)
+	}
+
+	// Sign the transaction using the payer's private key.
+	tx.Sign(func(key solana.PublicKey) *solana.PrivateKey {
+		if key.Equals(payer.PublicKey()) {
+			return &payer
+		}
+		return nil
+	})
+
+	return tx, nil
 }
 
 // SendRawTransaction sends the signed transaction to the Solana RPC endpoint.
