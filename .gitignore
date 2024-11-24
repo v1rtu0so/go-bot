@@ -1,0 +1,8 @@
+prompts.md
+*.yaml
+config/
+pkg/config/
+go.mod
+go.sum
+bot.go
+corvus_bot.go
