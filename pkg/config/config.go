@@ -24,6 +24,7 @@ type Config struct {
 	HeliusRPC            string `yaml:"helius_rpc"`              // Helius RPC endpoint
 	HeliusStakedRPC      string `yaml:"helius_staked_rpc"`       // Helius staked RPC endpoint
 	MainnetEndpoint      string `yaml:"mainnet_endpoint"`        // Mainnet endpoint
+	LamportsPerSol       string `yaml:"lamports_per_sol"`        // Lamports per SOL const
 	WSOLAddress          string `yaml:"wsol_address"`            // Wrapped SOL token address
 	USDCAddress          string `yaml:"usdc_address"`            // USDC token address
 	RaydiumAMMProgramID  string `yaml:"raydium_amm_program_id"`  // Raydium AMM Program ID
