@@ -7,7 +7,7 @@ import (
 )
 
 func TestFetchAndStoreAmmPool(t *testing.T) {
-	client := NewRaydiumClient("../../testdata/amm_pools.json", "../../testdata/clmm_pools.json")
+	client := NewRaydiumClient("../../data/testdata/amm_pools.json", "../../data/testdata/clmm_pools.json")
 	tokenAddress := "2qEHjDLDLbuBgRYvsxhc5D6uDWAivNFZGan56P1tpump" // Test token
 
 	// Fetch and store an AMM pool
@@ -17,7 +17,7 @@ func TestFetchAndStoreAmmPool(t *testing.T) {
 }
 
 func TestFetchAndStoreClmmPool(t *testing.T) {
-	client := NewRaydiumClient("../../testdata/amm_pools.json", "../../testdata/clmm_pools.json")
+	client := NewRaydiumClient("../../data/testdata/amm_pools.json", "../../data/testdata/clmm_pools.json")
 	tokenAddress := "CLMMSampleToken" // Test token
 
 	// Fetch and store a CLMM pool

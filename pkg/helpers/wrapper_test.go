@@ -14,7 +14,7 @@ import (
 
 // TestWrapperMainnetWithConfig tests wrapping and unwrapping SOL using configuration.
 func TestWrapperMainnetWithConfig(t *testing.T) {
-	// Load the configuration
+	// Load the configuration using Viper
 	cfg, err := config.LoadConfig("../config/config.yaml")
 	if err != nil {
 		t.Fatalf("Failed to load config: %v", err)
