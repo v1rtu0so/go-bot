@@ -92,3 +92,14 @@ func RPCRequest(ctx context.Context, rpcURL, method string, params interface{}, 
 
 	return json.NewDecoder(resp.Body).Decode(result)
 }
+
+// ToArray32 converts a byte slice to a 32-byte array.
+// It panics if the slice length is not 32.
+func ToArray32(b []byte) [32]byte {
+	if len(b) != 32 {
+		panic("slice length is not 32 bytes")
+	}
+	var arr [32]byte
+	copy(arr[:], b)
+	return arr
+}

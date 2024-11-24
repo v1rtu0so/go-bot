@@ -2,47 +2,57 @@ package helpers
 
 import (
 	"context"
+	"corvus_bot/internal/solana"
+	"corvus_bot/pkg/config"
 	"fmt"
 	"log"
 
 	"github.com/mr-tron/base58"
 )
 
-func UnwrapSOL(ctx context.Context, rpcURL string, payerPrivKey string, wsolAccount string) (string, error) {
-	// Convert private key and derive public key
-	payerPrivBytes, err := base58.Decode(payerPrivKey)
+// UnwrapSOL unwraps WSOL back to SOL.
+func UnwrapSOL(ctx context.Context, cfg *config.Config, wsolAccount string) (string, error) {
+	// Decode private key
+	payerPrivKey, err := base58.Decode(cfg.PrivateKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to decode private key: %w", err)
+		return "", fmt.Errorf("failed to decode payer private key: %w", err)
 	}
-	payerPubKey := DerivePublicKey(payerPrivBytes)
+	payerPubKey := solana.DerivePublicKey(payerPrivKey)
 
-	// Convert WSOL account to bytes
+	// Decode WSOL account
 	wsolPubKey, err := base58.Decode(wsolAccount)
 	if err != nil {
 		return "", fmt.Errorf("failed to decode WSOL account: %w", err)
 	}
 
 	// Fetch recent blockhash
-	blockhash, err := GetRecentBlockhash(ctx, rpcURL)
+	blockhash, err := solana.GetRecentBlockhash(ctx, cfg.RPCConnection)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch recent blockhash: %w", err)
 	}
 
-	// Construct raw instruction to close WSOL account
-	closeAccountIx := CloseAccountInstruction(wsolPubKey, payerPubKey, payerPubKey)
+	// Convert public keys to [32]byte
+	payerPubKeyArray := solana.ToArray32(payerPubKey)
+	wsolPubKeyArray := solana.ToArray32(wsolPubKey)
 
-	// Create raw transaction
-	rawTx := BuildRawTransaction([]Instruction{closeAccountIx}, blockhash, payerPubKey)
+	// Create raw transaction instructions
+	closeAccountIx := solana.CloseAccountInstruction(wsolPubKeyArray, payerPubKeyArray, payerPubKeyArray)
+
+	// Build raw transaction
+	rawTx := solana.BuildRawTransaction([]solana.Instruction{closeAccountIx}, blockhash, payerPubKeyArray)
 
 	// Sign transaction
-	signatures := SignTransaction(rawTx, []PrivateKey{payerPrivBytes})
+	signedTx, err := solana.SignTransaction(&rawTx, [][]byte{payerPrivKey})
+	if err != nil {
+		return "", fmt.Errorf("failed to sign transaction: %w", err)
+	}
 
 	// Send transaction
-	txHash, err := SendRawTransaction(ctx, rpcURL, signatures)
+	txHash, err := solana.SendRawTransaction(ctx, cfg.RPCConnection, signedTx)
 	if err != nil {
 		return "", fmt.Errorf("failed to send transaction: %w", err)
 	}
 
-	log.Printf("UnwrapSOL transaction hash: %s", txHash)
+	log.Printf("UnwrapSOL successful: txHash=%s", txHash)
 	return txHash, nil
 }

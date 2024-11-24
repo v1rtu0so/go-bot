@@ -3,46 +3,54 @@ package helpers
 import (
 	"context"
 	"corvus_bot/internal/solana"
+	"corvus_bot/pkg/config"
 	"fmt"
 	"log"
 
 	"github.com/mr-tron/base58"
 )
 
-// WrapSOL creates a raw transaction to wrap SOL into WSOL.
-func WrapSOL(ctx context.Context, rpcURL string, payerPrivKey string, amount uint64) (string, string, error) {
-	// Decode payer private key
-	payerPrivBytes, err := base58.Decode(payerPrivKey)
+// WrapSOL wraps SOL into WSOL.
+func WrapSOL(ctx context.Context, cfg *config.Config, amount uint64) (string, string, error) {
+	// Decode private key
+	payerPrivKey, err := base58.Decode(cfg.PrivateKey)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to decode payer private key: %w", err)
 	}
-	payerPubKey := solana.DerivePublicKey(payerPrivBytes)
+	payerPubKey := solana.DerivePublicKey(payerPrivKey)
 
-	// Generate a new account for WSOL
-	wsolPrivBytes := solana.GeneratePrivateKey()
-	wsolPubKey := solana.DerivePublicKey(wsolPrivBytes)
+	// Generate a new keypair for WSOL
+	wsolPrivKey := solana.GeneratePrivateKey()
+	wsolPubKey := solana.DerivePublicKey(wsolPrivKey)
 
-	// Fetch the recent blockhash
-	blockhash, err := solana.GetRecentBlockhash(ctx, rpcURL)
+	// Fetch recent blockhash
+	blockhash, err := solana.GetRecentBlockhash(ctx, cfg.RPCConnection)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to fetch recent blockhash: %w", err)
 	}
 
-	// Example rent exemption: adjust dynamically if needed
-	rentExemption := uint64(2039280)
+	// Convert public keys to [32]byte
+	payerPubKeyArray := solana.ToArray32(payerPubKey)
+	wsolPubKeyArray := solana.ToArray32(wsolPubKey)
 
-	// Create raw instructions
-	createAccountIx := solana.CreateAccountInstruction(payerPubKey, wsolPubKey, rentExemption+amount, 165)
-	initializeAccountIx := solana.InitializeAccountInstruction(wsolPubKey, payerPubKey)
+	// Rent exemption value
+	rentExemption := uint64(2039280) // Adjust based on the latest cluster requirements
 
-	// Build transaction
-	rawTx := solana.BuildRawTransaction([]solana.Instruction{createAccountIx, initializeAccountIx}, blockhash, payerPubKey)
+	// Create raw transaction instructions
+	createAccountIx := solana.CreateAccountInstruction(payerPubKeyArray, wsolPubKeyArray, rentExemption+amount, 165)
+	initializeAccountIx := solana.InitializeAccountInstruction(wsolPubKeyArray, solana.WSOLMintPubKey(), payerPubKeyArray)
+
+	// Build raw transaction
+	rawTx := solana.BuildRawTransaction([]solana.Instruction{createAccountIx, initializeAccountIx}, blockhash, payerPubKeyArray)
 
 	// Sign transaction
-	signedTx := solana.SignTransaction(rawTx, [][]byte{payerPrivBytes, wsolPrivBytes})
+	signedTx, err := solana.SignTransaction(&rawTx, [][]byte{payerPrivKey, wsolPrivKey})
+	if err != nil {
+		return "", "", fmt.Errorf("failed to sign transaction: %w", err)
+	}
 
 	// Send transaction
-	txHash, err := solana.SendRawTransaction(ctx, rpcURL, signedTx)
+	txHash, err := solana.SendRawTransaction(ctx, cfg.RPCConnection, signedTx)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to send transaction: %w", err)
 	}
