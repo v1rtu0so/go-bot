@@ -1,114 +1,94 @@
 package amm
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"os"
+	"io"
+	"log"
+	"net/http"
+
+	"github.com/gagliardetto/solana-go"
+	"github.com/gagliardetto/solana-go/rpc"
 )
 
-// FetchAmmPoolFromJSON fetches an AMM pool from the provided JSON file.
-func FetchAmmPoolFromJSON(tokenAddress, filePath string) (*RaydiumAmmPool, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open JSON file: %w", err)
-	}
-	defer file.Close()
-
-	var pools []RaydiumAmmPool
-	err = json.NewDecoder(file).Decode(&pools)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode JSON: %w", err)
-	}
-
-	for _, pool := range pools {
-		if pool.ID == tokenAddress {
-			return &pool, nil
-		}
-	}
-
-	return nil, fmt.Errorf("pool not found in JSON")
-}
-
-// FetchAmmPoolByID dynamically fetches an AMM pool based on the token address.
-func FetchAmmPoolByID(tokenAddress string) (*RaydiumAmmPool, error) {
-	// Simulated fetched data
-	return &RaydiumAmmPool{
-		ID:                 tokenAddress,
-		BaseMint:           "BaseMintExample",
-		QuoteMint:          "QuoteMintExample",
-		LpMint:             "LpMintExample",
-		BaseDecimals:       9,
-		QuoteDecimals:      9,
-		LpDecimals:         6,
-		Version:            4,
-		ProgramID:          "ExampleProgramID",
-		Authority:          "ExampleAuthority",
-		OpenOrders:         "ExampleOpenOrders",
-		TargetOrders:       "ExampleTargetOrders",
-		BaseVault:          "ExampleBaseVault",
-		QuoteVault:         "ExampleQuoteVault",
-		WithdrawQueue:      "ExampleWithdrawQueue",
-		LpVault:            "ExampleLpVault",
-		MarketVersion:      3,
-		MarketProgramID:    "ExampleMarketProgramID",
-		MarketID:           "ExampleMarketID",
-		MarketAuthority:    "ExampleMarketAuthority",
-		MarketBaseVault:    "ExampleMarketBaseVault",
-		MarketQuoteVault:   "ExampleMarketQuoteVault",
-		MarketBids:         "ExampleMarketBids",
-		MarketAsks:         "ExampleMarketAsks",
-		MarketEventQueue:   "ExampleMarketEventQueue",
-		LookupTableAccount: "ExampleLookupTableAccount",
-	}, nil
-}
-
-// FetchAndStorePool fetches a pool dynamically and stores it in the JSON file.
-func FetchAndStorePool(tokenAddress, filePath string) (*RaydiumAmmPool, error) {
-	// Check for existing pool in JSON
-	existingPool, err := FetchAmmPoolFromJSON(tokenAddress, filePath)
+func FetchAmmPoolFromJSONOrNetwork(ctx context.Context, client *rpc.Client, baseMint, quoteMint, programID, filePath string) (*RaydiumAmmPool, error) {
+	// First try to fetch from JSON
+	pool, err := FetchAmmPoolFromJSON(baseMint, quoteMint, filePath)
 	if err == nil {
-		fmt.Println("AMM pool data already exists.")
-		return existingPool, nil
+		log.Printf("Found pool in JSON storage: %s", pool.ID)
+		return pool, nil
 	}
 
-	// Dynamically fetch the pool
-	fmt.Println("AMM pool data not found. Fetching dynamically...")
-	newPool, err := FetchAmmPoolByID(tokenAddress)
+	log.Println("Pool data not found in JSON. Fetching dynamically from the Raydium API...")
+
+	// Get pool ID from API
+	poolID, poolProgramID, err := FetchAmmPoolIDFromAPI(baseMint, quoteMint)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch AMM pool: %w", err)
+		return nil, fmt.Errorf("failed to fetch pool ID from API: %w", err)
 	}
 
-	// Append the new pool data to the JSON file
-	err = appendToJSON(filePath, newPool)
+	log.Printf("Found pool ID from API: %s, fetching on-chain data...", poolID)
+
+	// Fetch pool account data from chain
+	accountInfo, err := client.GetAccountInfo(ctx, solana.MustPublicKeyFromBase58(poolID))
 	if err != nil {
-		return nil, fmt.Errorf("failed to store AMM pool data: %w", err)
+		return nil, fmt.Errorf("failed to get account info from chain: %w", err)
 	}
 
-	return newPool, nil
+	if accountInfo == nil || accountInfo.Value == nil {
+		return nil, fmt.Errorf("no account data found for pool ID: %s", poolID)
+	}
+
+	rawData := accountInfo.Value.Data.GetBinary()
+	log.Printf("Retrieved %d bytes of account data from chain", len(rawData))
+
+	// Parse account data
+	pool, err = parseAmmAccountData(rawData, poolProgramID, poolID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse on-chain data: %w", err)
+	}
+
+	// Log pool data for verification
+	log.Printf("Successfully parsed pool data. ID: %s, Base: %s, Quote: %s",
+		pool.ID, pool.BaseMint, pool.QuoteMint)
+
+	// Store the data
+	err = StorePoolData(pool, filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to store pool data: %w", err)
+	}
+
+	return pool, nil
 }
 
-// appendToJSON appends a new pool to an existing JSON file.
-func appendToJSON(filePath string, pool *RaydiumAmmPool) error {
-	file, err := os.OpenFile(filePath, os.O_RDWR|os.O_CREATE, 0755)
+func FetchAmmPoolIDFromAPI(baseMint, quoteMint string) (string, string, error) {
+	url := fmt.Sprintf("https://api-v3.raydium.io/pools/info/mint?mint1=%s&mint2=%s&poolType=standard&poolSortField=default&sortType=desc&pageSize=1&page=1",
+		baseMint, quoteMint)
+
+	log.Printf("Fetching from API: %s", url)
+	resp, err := http.Get(url)
 	if err != nil {
-		return fmt.Errorf("failed to open JSON file: %w", err)
+		return "", "", fmt.Errorf("API request failed: %w", err)
 	}
-	defer file.Close()
+	defer resp.Body.Close()
 
-	var pools []RaydiumAmmPool
-	err = json.NewDecoder(file).Decode(&pools)
-	if err != nil && err.Error() != "EOF" {
-		return fmt.Errorf("failed to decode JSON: %w", err)
-	}
-
-	// Append the new pool
-	pools = append(pools, *pool)
-
-	// Write back the updated list to the JSON file
-	file.Seek(0, 0)
-	if err := json.NewEncoder(file).Encode(pools); err != nil {
-		return fmt.Errorf("failed to encode updated data: %w", err)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to read response: %w", err)
 	}
 
-	return nil
+	var apiResp RaydiumAPIResponse
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		return "", "", fmt.Errorf("failed to parse API response: %w", err)
+	}
+
+	if !apiResp.Success || len(apiResp.Data.Data) == 0 {
+		return "", "", fmt.Errorf("no pool found")
+	}
+
+	poolData := apiResp.Data.Data[0]
+	log.Printf("API returned pool ID: %s with program ID: %s",
+		poolData.ID, poolData.ProgramID)
+	return poolData.ID, poolData.ProgramID, nil
 }
