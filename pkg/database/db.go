@@ -1,27 +1,3 @@
-// pkg/database/db.go
-
-/* EXAMPLE USAGE IN APP:
-func main() {
-    cfg, err := config.LoadConfig("config.yaml")
-    if err != nil {
-        log.Fatalf("Failed to load config: %v", err)
-    }
-
-    db, err := database.NewDatabase(cfg)
-    if err != nil {
-        log.Fatalf("Failed to initialize database: %v", err)
-    }
-    defer db.Close()
-
-    // Check database health
-    if err := db.Health(); err != nil {
-        log.Fatalf("Database health check failed: %v", err)
-    }
-
-    // Your application logic here...
-}
-*/
-
 package database
 
 import (
@@ -38,14 +14,12 @@ import (
 	"corvus_bot/pkg/database/models"
 )
 
-// Database wraps the GORM DB connection and provides additional functionality
 type Database struct {
 	*gorm.DB
 }
 
 // NewDatabase creates a new database connection and initializes the schema
 func NewDatabase(cfg *config.Config) (*Database, error) {
-	// Create custom logger for GORM
 	newLogger := logger.New(
 		log.New(os.Stdout, "\r\n", log.LstdFlags),
 		logger.Config{
@@ -56,7 +30,6 @@ func NewDatabase(cfg *config.Config) (*Database, error) {
 		},
 	)
 
-	// Connect to the database
 	db, err := gorm.Open(postgres.Open(cfg.Database.CorvusGoDb), &gorm.Config{
 		Logger: newLogger,
 		NowFunc: func() time.Time {
@@ -67,20 +40,17 @@ func NewDatabase(cfg *config.Config) (*Database, error) {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	// Set connection pool settings
 	sqlDB, err := db.DB()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get underlying *sql.DB: %w", err)
 	}
 
-	// Set connection pool parameters
 	sqlDB.SetMaxIdleConns(10)
 	sqlDB.SetMaxOpenConns(100)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
 	database := &Database{db}
 
-	// Initialize database schema
 	if err := database.InitializeSchema(); err != nil {
 		return nil, fmt.Errorf("failed to initialize schema: %w", err)
 	}
@@ -90,11 +60,11 @@ func NewDatabase(cfg *config.Config) (*Database, error) {
 
 // InitializeSchema sets up the database schema and required extensions
 func (db *Database) InitializeSchema() error {
-	// Enable required PostgreSQL extensions
+	// Enable PostgreSQL extensions
 	extensions := []string{
 		"uuid-ossp",          // For UUID generation
 		"timescaledb",        // For time-series functionality
-		"pg_stat_statements", // For query performance monitoring
+		"pg_stat_statements", // For query monitoring
 	}
 
 	for _, ext := range extensions {
@@ -103,7 +73,10 @@ func (db *Database) InitializeSchema() error {
 		}
 	}
 
-	// Initialize tables and types
+	if err := db.InitializeEnums(); err != nil {
+		return fmt.Errorf("failed to initialize enums: %w", err)
+	}
+
 	if err := db.InitializeTables(); err != nil {
 		return fmt.Errorf("failed to initialize tables: %w", err)
 	}
@@ -111,64 +84,63 @@ func (db *Database) InitializeSchema() error {
 	return nil
 }
 
-// InitializeTables creates all necessary tables and types
-func (db *Database) InitializeTables() error {
-	// Create protocol and pool type enums
-	if err := db.Exec(`DO $$ BEGIN
-        CREATE TYPE protocol AS ENUM (
-            'RAYDIUM', 
-            'JUPITER', 
-            'METEORA', 
-            'MOONSHOT', 
-            'PUMPFUN',
-            'ORCA'
-        );
-        CREATE TYPE pool_type AS ENUM (
-            'AMM', 
-            'CLMM', 
-            'BONDING_CURVE',
-            'WHIRLPOOL',
-            'AGGREGATOR'
-        );
-        EXCEPTION WHEN duplicate_object THEN NULL;
-    END $$;`).Error; err != nil {
-		return fmt.Errorf("failed to create enums: %w", err)
-	}
+// InitializeEnums creates custom enum types
+func (db *Database) InitializeEnums() error {
+	enumDefinitions := `DO $$ BEGIN
+		CREATE TYPE protocol AS ENUM (
+			'RAYDIUM', 'JUPITER', 'METEORA', 'MOONSHOT', 'PUMPFUN', 'ORCA'
+		);
+		CREATE TYPE pool_type AS ENUM (
+			'AMM', 'CLMM', 'WHIRLPOOL', 'BONDING_CURVE'
+		);
+		CREATE TYPE asset_type AS ENUM (
+			'FUNGIBLE', 'NON_FUNGIBLE', 'COMPRESSED'
+		);
+		CREATE TYPE asset_interface AS ENUM (
+			'V1_NFT', 'FUNGIBLE_TOKEN', 'COMPRESSED_NFT'
+		);
+		CREATE TYPE asset_status AS ENUM (
+			'ACTIVE', 'INACTIVE', 'BURNED', 'MIGRATED'
+		);
+		CREATE TYPE pool_status AS ENUM (
+			'ACTIVE', 'INACTIVE', 'MIGRATED'
+		);
+		CREATE TYPE relation_type AS ENUM (
+			'MIGRATION', 'WRAP', 'VERSION'
+		);
+		EXCEPTION WHEN duplicate_object THEN NULL;
+	END $$;`
 
-	// Auto-migrate all pool types
+	return db.Exec(enumDefinitions).Error
+}
+
+// InitializeTables creates and migrates all tables
+func (db *Database) InitializeTables() error {
+	// Auto-migrate all models
 	if err := db.AutoMigrate(
-		&models.RaydiumAMMPool{},
-		&models.RaydiumCLMMPool{},
-		&models.PumpFunPool{},
-		&models.JupiterPool{},
-		&models.MeteoraPool{},
-		&models.MoonshotPool{},
-		&models.OrcaWhirlpool{},
-		&models.RaydiumAMMMetric{},
-		&models.RaydiumCLMMMetric{},
-		&models.PumpFunMetric{},
-		&models.JupiterMetric{},
-		&models.MeteoraMetric{},
-		&models.MoonshotMetric{},
-		&models.OrcaMetric{},
+		&models.Asset{},
+		&models.Pool{},
+		&models.AssetMetric{},
+		&models.PoolMetric{},
+		&models.TokenMetric{},
+		&models.MarketMetric{},
+		&models.AssetRelationship{},
+		&models.PoolRelationship{},
+		&models.AssetPool{},
+		&models.Migration{},
 	); err != nil {
 		return fmt.Errorf("failed to migrate tables: %w", err)
 	}
 
-	// Create hypertables for all metric tables
+	// Create hypertables for time-series data
 	tables := []string{
-		"raydium_amm_metrics",
-		"raydium_clmm_metrics",
-		"pump_fun_metrics",
-		"jupiter_metrics",
-		"meteora_metrics",
-		"moonshot_metrics",
-		"orca_metrics",
+		"asset_metrics",
+		"pool_metrics",
+		"token_metrics",
+		"market_metrics",
 	}
 
-	// Create hypertables and indexes
 	for _, table := range tables {
-		// Create hypertable
 		if err := db.Exec(
 			`SELECT create_hypertable(?, 'timestamp', if_not_exists => TRUE)`,
 			table,
@@ -180,7 +152,67 @@ func (db *Database) InitializeTables() error {
 	return nil
 }
 
-// Close closes the database connection
+// Asset Operations
+func (db *Database) UpsertAsset(asset *models.Asset) error {
+	return db.Save(asset).Error
+}
+
+func (db *Database) GetAssetByAddress(address string) (*models.Asset, error) {
+	var asset models.Asset
+	err := db.Where("address = ?", address).First(&asset).Error
+	return &asset, err
+}
+
+// Pool Operations
+func (db *Database) UpsertPool(pool *models.Pool) error {
+	return db.Save(pool).Error
+}
+
+func (db *Database) GetPoolByID(id string) (*models.Pool, error) {
+	var pool models.Pool
+	err := db.Where("id = ?", id).First(&pool).Error
+	return &pool, err
+}
+
+// Metric Operations
+func (db *Database) InsertMetrics(metrics interface{}) error {
+	return db.Create(metrics).Error
+}
+
+func (db *Database) GetLatestMetrics(assetID string, limit int) ([]models.AssetMetric, error) {
+	var metrics []models.AssetMetric
+	err := db.Where("asset_id = ?", assetID).
+		Order("timestamp DESC").
+		Limit(limit).
+		Find(&metrics).Error
+	return metrics, err
+}
+
+// Relationship Operations
+func (db *Database) CreateAssetRelationship(rel *models.AssetRelationship) error {
+	return db.Create(rel).Error
+}
+
+func (db *Database) GetAssetRelationships(assetID string) ([]models.AssetRelationship, error) {
+	var relationships []models.AssetRelationship
+	err := db.Where("source_id = ? OR target_id = ?", assetID, assetID).
+		Find(&relationships).Error
+	return relationships, err
+}
+
+// Migration Operations
+func (db *Database) CreateMigration(migration *models.Migration) error {
+	return db.Create(migration).Error
+}
+
+func (db *Database) GetMigrationsByAsset(assetID string) ([]models.Migration, error) {
+	var migrations []models.Migration
+	err := db.Where("source_asset_id = ? OR target_asset_id = ?", assetID, assetID).
+		Order("created_at DESC").
+		Find(&migrations).Error
+	return migrations, err
+}
+
 func (db *Database) Close() error {
 	sqlDB, err := db.DB.DB()
 	if err != nil {
@@ -189,7 +221,6 @@ func (db *Database) Close() error {
 	return sqlDB.Close()
 }
 
-// Health checks if the database connection is healthy
 func (db *Database) Health() error {
 	sqlDB, err := db.DB.DB()
 	if err != nil {
@@ -198,22 +229,17 @@ func (db *Database) Health() error {
 	return sqlDB.Ping()
 }
 
-// Truncate truncates all tables (useful for testing)
-func (db *Database) Truncate() error {
-	tables := []string{
-		"raydium_amm_pools",
-		"raydium_clmm_pools",
-		"pump_fun_pools",
-		"raydium_amm_metrics",
-		"raydium_clmm_metrics",
-		"pump_fun_metrics",
+// Transaction wrapper
+func (db *Database) WithTx(fn func(*gorm.DB) error) error {
+	tx := db.Begin()
+	if tx.Error != nil {
+		return tx.Error
 	}
 
-	for _, table := range tables {
-		if err := db.Exec(fmt.Sprintf("TRUNCATE TABLE %s CASCADE", table)).Error; err != nil {
-			return fmt.Errorf("failed to truncate table %s: %w", table, err)
-		}
+	if err := fn(tx); err != nil {
+		tx.Rollback()
+		return err
 	}
 
-	return nil
+	return tx.Commit().Error
 }

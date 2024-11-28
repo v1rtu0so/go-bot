@@ -1,5 +1,3 @@
-// pkg/database/models/base.go
-
 package models
 
 import (
@@ -8,34 +6,40 @@ import (
 	"gorm.io/gorm"
 )
 
-// Protocol represents different DEX protocols
-type Protocol string
-
-const (
-	ProtocolRaydium  Protocol = "RAYDIUM"
-	ProtocolJupiter  Protocol = "JUPITER"
-	ProtocolMeteora  Protocol = "METEORA"
-	ProtocolMoonshot Protocol = "MOONSHOT"
-	ProtocolPumpFun  Protocol = "PUMPFUN"
-)
-
-// PoolType represents different types of liquidity pools
-type PoolType string
-
-const (
-	PoolTypeAMM          PoolType = "AMM"
-	PoolTypeCLMM         PoolType = "CLMM"
-	PoolTypeBondingCurve PoolType = "BONDING_CURVE"
-)
-
-// BasePool contains common fields for all pool types
-type BasePool struct {
+type BaseModel struct {
 	gorm.Model
-	ID          string    `gorm:"primaryKey;type:varchar(64)"`
-	Protocol    Protocol  `gorm:"type:varchar(20);not null;index"`
-	PoolType    PoolType  `gorm:"type:varchar(20);not null;index"`
-	ProgramID   string    `gorm:"type:varchar(64);not null;index"`
-	BaseMint    string    `gorm:"type:varchar(64);not null;index"`
-	QuoteMint   string    `gorm:"type:varchar(64);not null;index"`
 	LastUpdated time.Time `gorm:"index;not null"`
+}
+
+type BaseAsset struct {
+	BaseModel
+	ID        string         `gorm:"primaryKey;type:varchar(64)"`
+	Address   string         `gorm:"type:varchar(64);uniqueIndex"`
+	Interface AssetInterface `gorm:"type:varchar(32);index"`
+	Type      AssetType      `gorm:"type:varchar(20);index"`
+	Status    AssetStatus    `gorm:"type:varchar(20);index"`
+	Name      string         `gorm:"type:varchar(128)"`
+	Symbol    string         `gorm:"type:varchar(32)"`
+	Mint      string         `gorm:"type:varchar(64);index"`
+	Decimals  uint8          `gorm:"type:smallint"`
+	Supply    *uint64
+}
+
+type BasePool struct {
+	BaseModel
+	ID        string     `gorm:"primaryKey;type:varchar(64)"`
+	Protocol  Protocol   `gorm:"type:varchar(20);index"`
+	Type      PoolType   `gorm:"type:varchar(20);index"`
+	Status    PoolStatus `gorm:"type:varchar(20);index"`
+	ProgramID string     `gorm:"type:varchar(64);index"`
+	BaseMint  string     `gorm:"type:varchar(64);index"`
+	QuoteMint string     `gorm:"type:varchar(64);index"`
+	Version   uint8      `gorm:"type:smallint"`
+}
+
+type BaseMetric struct {
+	BaseModel
+	PoolID      string    `gorm:"type:varchar(64);index"`
+	Timestamp   time.Time `gorm:"index;not null"`
+	LastFetched time.Time `gorm:"index"`
 }
