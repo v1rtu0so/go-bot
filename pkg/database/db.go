@@ -18,6 +18,22 @@ type Database struct {
 	*gorm.DB
 }
 
+// Add the ConnectDatabase function
+func ConnectDatabase(cfg *config.Config) (*gorm.DB, error) {
+	dsn := cfg.Database.CorvusGoDb
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Info), // Use organization's logging preferences
+		NowFunc: func() time.Time {
+			return time.Now().UTC()
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to the database: %w", err)
+	}
+
+	return db, nil
+}
+
 // NewDatabase creates a new database connection and initializes the schema
 func NewDatabase(cfg *config.Config) (*Database, error) {
 	newLogger := logger.New(
